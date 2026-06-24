@@ -1,0 +1,59 @@
+name: Build Plugin
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  idf-build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.2
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Checkout BareBrain
+        uses: actions/checkout@v4
+        with:
+          repository: AYOYR-all/BareBrain
+          ref: master
+          path: barebrain
+
+      - name: Build display plugin
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/barebrain"
+          mkdir -p barebrain/main/external_mods/tool-display
+          cp -R plugin/barebrain.mod.json plugin/CMakeLists.txt plugin/src \
+            barebrain/main/external_mods/tool-display/
+          cat > barebrain/display-profile.json <<'JSON'
+          {
+            "enabled_mods": [
+              "tool-cron",
+              "tool-files",
+              "tool-get-time",
+              "tool-gpio",
+              "tool-memory",
+              "tool-web-search",
+              "tool-display"
+            ],
+            "config": {
+              "display.spi_sclk": 5,
+              "display.spi_mosi": 6,
+              "display.reset": 7,
+              "display.dc": 8,
+              "display.cs": 9,
+              "display.backlight": 10
+            }
+          }
+          JSON
+          cd barebrain
+          . "$IDF_PATH/export.sh"
+          idf.py set-target esp32s3
+          idf.py -DBRN_BUILD_PROFILE="$PWD/display-profile.json" reconfigure
+          idf.py build

@@ -9,7 +9,7 @@ static const char *const tool_display_deps[] = {
 
 static const brn_tool_t display_text_tool = {
     .name = "display_text",
-    .description = "Display text on the configured OLED or TFT screen.",
+    .description = "Display ASCII text on the configured ST7735S 128x160 TFT screen.",
     .input_schema_json =
         "{\"type\":\"object\","
         "\"properties\":{\"text\":{\"type\":\"string\",\"description\":\"Text to display\"}},"
@@ -29,7 +29,7 @@ static esp_err_t tool_display_mod_init(void)
 const brn_mod_t brn_mod_tool_display = {
     .id = "tool-display",
     .name = "Display Tool",
-    .version = "0.1.0",
+    .version = "0.1.1",
     .deps = tool_display_deps,
     .init = tool_display_mod_init,
 };

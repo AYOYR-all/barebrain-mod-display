@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Add a real ST7735S-compatible 128x160 SPI display driver.
+- Read all six GPIO assignments from the generated firmware Profile.
+- Add screen initialization, clear, wrapping, and ASCII text rendering.
+
 ## 0.1.0
 
 - 创建 BareBrain 外部 Mod 结构。

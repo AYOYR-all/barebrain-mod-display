@@ -6,4 +6,7 @@ idf_component_register(
         "src"
     REQUIRES
         json
+        esp_driver_gpio
+        esp_driver_spi
+        freertos
 )
