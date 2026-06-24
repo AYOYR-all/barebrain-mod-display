@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS
+        "src/mod_tool_display.c"
+        "src/tool_display.c"
+    INCLUDE_DIRS
+        "src"
+    REQUIRES
+        json
+)

@@ -1,0 +1,48 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate version
+        shell: python
+        run: |
+          import json, os
+          from pathlib import Path
+          manifest = json.loads(Path("barebrain.mod.json").read_text(encoding="utf-8"))
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != f"v{manifest['version']}":
+              raise SystemExit(f"tag {tag} does not match manifest version {manifest['version']}")
+      - name: Package plugin
+        shell: python
+        run: |
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+          files = [
+              Path("barebrain.mod.json"), Path("CMakeLists.txt"), Path("README.md"),
+              Path("CHANGELOG.md"), Path("LICENSE"),
+              *sorted(Path("src").rglob("*")), *sorted(Path("tests").rglob("*")),
+          ]
+          with ZipFile("tool-display.zip", "w", ZIP_DEFLATED, compresslevel=9) as archive:
+              for path in files:
+                  if path.is_file():
+                      info = ZipInfo(path.as_posix(), date_time=(2026, 1, 1, 0, 0, 0))
+                      info.compress_type = ZIP_DEFLATED
+                      info.external_attr = 0o100644 << 16
+                      archive.writestr(info, path.read_bytes(), compresslevel=9)
+      - name: Print checksum
+        run: sha256sum tool-display.zip
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tool-display.zip
+          generate_release_notes: true

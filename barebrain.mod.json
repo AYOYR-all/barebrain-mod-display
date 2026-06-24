@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "id": "tool-display",
+  "name": "显示屏幕",
+  "version": "0.1.0",
+  "type": "tool",
+  "description": "在 BareBrain 连接的显示屏上显示文本和设备状态。",
+  "targets": ["esp32s3"],
+  "sources": [
+    "src/mod_tool_display.c",
+    "src/tool_display.c"
+  ],
+  "headers": [
+    "src/tool_display.h"
+  ],
+  "dependencies": [
+    "core.tool_registry"
+  ],
+  "conflicts": [],
+  "permissions": [
+    "gpio.write"
+  ],
+  "tools": [
+    "display_text"
+  ],
+  "services": [],
+  "resources": {
+    "tasks": 0,
+    "gpio": ["configurable"],
+    "spi": ["configurable"],
+    "psram_bytes_hint": 8192,
+    "flash_bytes_hint": 57344
+  },
+  "config_schema": {
+    "display.spi_sclk": {
+      "type": "gpio",
+      "label": "SCL / SPI SCLK",
+      "required": true
+    },
+    "display.spi_mosi": {
+      "type": "gpio",
+      "label": "SDA / SPI MOSI",
+      "required": true
+    },
+    "display.reset": {
+      "type": "gpio",
+      "label": "RST",
+      "required": true
+    },
+    "display.dc": {
+      "type": "gpio",
+      "label": "DC",
+      "required": true
+    },
+    "display.cs": {
+      "type": "gpio",
+      "label": "CS",
+      "required": true
+    },
+    "display.backlight": {
+      "type": "gpio",
+      "label": "BLK 背光",
+      "required": true
+    }
+  },
+  "hardware": {
+    "module": "1.8 inch 128x160 RGB TFT",
+    "interface": "4-wire-spi",
+    "power": [
+      {"module_pin": "VDD", "board_pin": "verify-module-voltage"},
+      {"module_pin": "GND", "board_pin": "GND"}
+    ]
+  }
+}
