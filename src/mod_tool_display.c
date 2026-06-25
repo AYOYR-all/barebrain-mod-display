@@ -29,7 +29,7 @@ static esp_err_t tool_display_mod_init(void)
 const brn_mod_t brn_mod_tool_display = {
     .id = "tool-display",
     .name = "Display Tool",
-    .version = "0.1.1",
+    .version = "0.1.2",
     .deps = tool_display_deps,
     .init = tool_display_mod_init,
 };

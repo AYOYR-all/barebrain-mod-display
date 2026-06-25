@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Display `READY` after the ST7735S screen initializes successfully.
+
 ## 0.1.1
 
 - Add a real ST7735S-compatible 128x160 SPI display driver.

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "tool-display",
   "name": "显示屏幕",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "tool",
   "description": "在 BareBrain 连接的显示屏上显示文本和设备状态。",
   "targets": ["esp32s3"],

@@ -266,7 +266,7 @@ esp_err_t tool_display_init(void)
     s_ready = true;
     gpio_set_level(BRN_PROFILE_DISPLAY_BACKLIGHT, 1);
     ESP_LOGI(TAG, "ST7735S display ready on SPI2");
-    return fill(COLOR_BLACK);
+    return draw_text("READY");
 }
 
 esp_err_t tool_display_execute(const char *input_json, char *output, size_t output_size)
