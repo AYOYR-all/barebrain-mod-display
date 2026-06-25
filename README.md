@@ -4,7 +4,7 @@ Version 0.1.1 supports ST7735S-compatible 1.8-inch 128x160 SPI TFT modules.
 The first hardware release renders wrapped ASCII text. Non-ASCII characters
 are replaced with `?`.
 
-BareBrain 的外部显示屏插件骨架。插件注册 `display_text` 工具，用于将文本、状态和调试信息输出到 OLED 或 TFT 屏幕。
+BareBrain 的外部 SPI 屏幕插件。插件注册 `display_text` 工具，用于将文本、状态和调试信息输出到 SPI TFT 屏幕。
 
 ## 当前状态
 
