@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "cJSON.h"
 #include "driver/gpio.h"
@@ -14,6 +15,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "generated/brn_profile_config.h"
+#include "wifi/wifi_manager.h"
 
 #ifndef BRN_PROFILE_DISPLAY_SPI_SCLK
 #error "tool-display requires display.spi_sclk in the firmware Profile"
@@ -38,13 +40,30 @@
 #define DISPLAY_HEIGHT 160
 #define DISPLAY_SPI_HOST SPI2_HOST
 #define DISPLAY_CLOCK_HZ (20 * 1000 * 1000)
-#define COLOR_BLACK 0x0000
-#define COLOR_WHITE 0xFFFF
+#define RGB565(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
+#define STATUS_REFRESH_MS 3000
+#define WIFI_TIMEOUT_MS 35000
+
+enum {
+    COLOR_BG = RGB565(244, 248, 240),
+    COLOR_PANEL = RGB565(251, 253, 248),
+    COLOR_PANEL_DARK = RGB565(35, 83, 58),
+    COLOR_LINE = RGB565(203, 218, 202),
+    COLOR_TEXT = RGB565(29, 48, 38),
+    COLOR_MUTED = RGB565(95, 118, 102),
+    COLOR_ACCENT = RGB565(47, 111, 79),
+    COLOR_WARN = RGB565(184, 126, 42),
+    COLOR_ERROR = RGB565(170, 63, 57),
+    COLOR_WHITE = RGB565(255, 255, 255),
+};
 
 static const char *TAG = "tool_display";
 static spi_device_handle_t s_spi;
 static SemaphoreHandle_t s_lock;
 static bool s_ready;
+static TickType_t s_init_tick;
+static char s_weather1[32] = "TODAY WEATHER";
+static char s_weather2[32] = "WAIT UPDATE";
 
 static esp_err_t transmit(bool data_mode, const void *data, size_t length)
 {
@@ -100,6 +119,47 @@ static esp_err_t fill(uint16_t color)
     return err;
 }
 
+static esp_err_t fill_rect(int x, int y, int width, int height, uint16_t color)
+{
+    if (width <= 0 || height <= 0) {
+        return ESP_OK;
+    }
+    if (x < 0) {
+        width += x;
+        x = 0;
+    }
+    if (y < 0) {
+        height += y;
+        y = 0;
+    }
+    if (x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT) {
+        return ESP_OK;
+    }
+    if (x + width > DISPLAY_WIDTH) {
+        width = DISPLAY_WIDTH - x;
+    }
+    if (y + height > DISPLAY_HEIGHT) {
+        height = DISPLAY_HEIGHT - y;
+    }
+    if (width <= 0 || height <= 0) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = set_window((uint16_t)x, (uint16_t)y, (uint16_t)width, (uint16_t)height);
+    uint8_t pixels[128];
+    for (size_t i = 0; i < sizeof(pixels); i += 2) {
+        pixels[i] = color >> 8;
+        pixels[i + 1] = color & 0xFF;
+    }
+    int remaining = width * height;
+    while (err == ESP_OK && remaining > 0) {
+        int chunk = remaining > (int)(sizeof(pixels) / 2) ? (int)(sizeof(pixels) / 2) : remaining;
+        err = transmit(true, pixels, (size_t)chunk * 2);
+        remaining -= chunk;
+    }
+    return err;
+}
+
 static const uint8_t *glyph(char input)
 {
     static const uint8_t blank[5] = {0, 0, 0, 0, 0};
@@ -130,6 +190,7 @@ static const uint8_t *glyph(char input)
     static const uint8_t dot[5] = {0,0x60,0x60,0,0};
     static const uint8_t colon[5] = {0,0x36,0x36,0,0};
     static const uint8_t slash[5] = {0x20,0x10,0x08,0x04,0x02};
+    static const uint8_t percent[5] = {0x62,0x64,0x08,0x13,0x23};
 
     unsigned char value = (unsigned char)input;
     if (value == ' ') return blank;
@@ -140,10 +201,11 @@ static const uint8_t *glyph(char input)
     if (value == '.') return dot;
     if (value == ':') return colon;
     if (value == '/') return slash;
+    if (value == '%') return percent;
     return unknown;
 }
 
-static esp_err_t draw_character(uint16_t x, uint16_t y, char value)
+static esp_err_t draw_character(uint16_t x, uint16_t y, char value, uint16_t fg, uint16_t bg)
 {
     const uint8_t *bitmap = glyph(value);
     uint8_t pixels[6 * 8 * 2];
@@ -151,7 +213,7 @@ static esp_err_t draw_character(uint16_t x, uint16_t y, char value)
     for (int row = 0; row < 8; ++row) {
         for (int column = 0; column < 6; ++column) {
             bool active = column < 5 && (bitmap[column] & (1U << row));
-            uint16_t color = active ? COLOR_WHITE : COLOR_BLACK;
+            uint16_t color = active ? fg : bg;
             pixels[offset++] = color >> 8;
             pixels[offset++] = color & 0xFF;
         }
@@ -160,29 +222,154 @@ static esp_err_t draw_character(uint16_t x, uint16_t y, char value)
     return err == ESP_OK ? transmit(true, pixels, sizeof(pixels)) : err;
 }
 
-static esp_err_t draw_text(const char *text)
+static esp_err_t draw_character_scaled(int x, int y, char value, uint16_t fg, uint16_t bg, int scale)
 {
-    uint16_t x = 1;
-    uint16_t y = 1;
-    esp_err_t err = fill(COLOR_BLACK);
-    for (const unsigned char *cursor = (const unsigned char *)text;
-         err == ESP_OK && *cursor != '\0' && y + 8 <= DISPLAY_HEIGHT;
-         ++cursor) {
-        if (*cursor == '\n' || x + 6 > DISPLAY_WIDTH) {
-            x = 1;
-            y += 8;
-            if (*cursor == '\n') {
-                continue;
+    if (scale <= 1) {
+        return draw_character((uint16_t)x, (uint16_t)y, value, fg, bg);
+    }
+    const uint8_t *bitmap = glyph(value);
+    esp_err_t err = fill_rect(x, y, 6 * scale, 8 * scale, bg);
+    for (int row = 0; err == ESP_OK && row < 8; ++row) {
+        for (int column = 0; err == ESP_OK && column < 6; ++column) {
+            bool active = column < 5 && (bitmap[column] & (1U << row));
+            if (active) {
+                err = fill_rect(x + column * scale, y + row * scale, scale, scale, fg);
             }
         }
+    }
+    return err;
+}
+
+static esp_err_t draw_text_at(int x, int y, const char *text, uint16_t fg, uint16_t bg,
+                              int scale, int max_width)
+{
+    if (!text) {
+        return ESP_OK;
+    }
+    int cursor_x = x;
+    int step = 6 * scale;
+    esp_err_t err = ESP_OK;
+    for (const unsigned char *cursor = (const unsigned char *)text;
+         err == ESP_OK && *cursor != '\0';
+         ++cursor) {
+        if (*cursor == '\n' || cursor_x + step > x + max_width || cursor_x + step > DISPLAY_WIDTH) {
+            break;
+        }
         char value = (*cursor < 0x80) ? (char)*cursor : '?';
-        err = draw_character(x, y, value);
-        x += 6;
+        err = draw_character_scaled(cursor_x, y, value, fg, bg, scale);
+        cursor_x += step;
         while (cursor[1] >= 0x80 && cursor[1] < 0xC0) {
             ++cursor;
         }
     }
     return err;
+}
+
+static esp_err_t draw_rect(int x, int y, int width, int height, uint16_t color)
+{
+    esp_err_t err = fill_rect(x, y, width, 1, color);
+    if (err == ESP_OK) err = fill_rect(x, y + height - 1, width, 1, color);
+    if (err == ESP_OK) err = fill_rect(x, y, 1, height, color);
+    if (err == ESP_OK) err = fill_rect(x + width - 1, y, 1, height, color);
+    return err;
+}
+
+static esp_err_t draw_panel(int x, int y, int width, int height)
+{
+    esp_err_t err = fill_rect(x, y, width, height, COLOR_PANEL);
+    if (err == ESP_OK) {
+        err = draw_rect(x, y, width, height, COLOR_LINE);
+    }
+    return err;
+}
+
+static esp_err_t draw_dot(int x, int y, uint16_t color)
+{
+    esp_err_t err = fill_rect(x + 1, y, 4, 1, color);
+    if (err == ESP_OK) err = fill_rect(x, y + 1, 6, 4, color);
+    if (err == ESP_OK) err = fill_rect(x + 1, y + 5, 4, 1, color);
+    return err;
+}
+
+static void copy_ascii_line(char *dst, size_t dst_size, const char *src)
+{
+    if (!dst || dst_size == 0) {
+        return;
+    }
+    size_t out = 0;
+    if (src) {
+        for (const unsigned char *p = (const unsigned char *)src;
+             *p && out + 1 < dst_size;
+             ++p) {
+            if (*p == '\r' || *p == '\n') {
+                break;
+            }
+            if (*p < 0x80) {
+                dst[out++] = (char)*p;
+            } else if (out + 1 < dst_size) {
+                dst[out++] = '?';
+                while (p[1] >= 0x80 && p[1] < 0xC0) {
+                    ++p;
+                }
+            }
+        }
+    }
+    dst[out] = '\0';
+}
+
+static esp_err_t draw_status_screen_locked(void)
+{
+    bool connected = wifi_manager_is_connected();
+    bool has_credentials = wifi_manager_has_credentials();
+    uint32_t elapsed_ms = (uint32_t)((xTaskGetTickCount() - s_init_tick) * portTICK_PERIOD_MS);
+    bool timed_out = has_credentials && !connected && elapsed_ms >= WIFI_TIMEOUT_MS;
+    const char *wifi_title = connected ? "WIFI OK" : (timed_out ? "WIFI TIMEOUT" : (has_credentials ? "WIFI WAIT" : "SETUP WIFI"));
+    const char *wifi_detail = connected ? wifi_manager_get_ip() : (timed_out ? "SETUP PORTAL" : (has_credentials ? "CONNECTING" : "192.168.4.1"));
+    uint16_t wifi_color = connected ? COLOR_ACCENT : (timed_out || !has_credentials ? COLOR_ERROR : COLOR_WARN);
+
+    char date_text[16] = "DATE SYNC";
+    char time_text[8] = "--:--";
+    time_t now = time(NULL);
+    if (now > 1700000000) {
+        struct tm local;
+        localtime_r(&now, &local);
+        strftime(date_text, sizeof(date_text), "%m/%d %a", &local);
+        strftime(time_text, sizeof(time_text), "%H:%M", &local);
+    }
+
+    esp_err_t err = fill(COLOR_BG);
+    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 25, COLOR_PANEL_DARK);
+    if (err == ESP_OK) err = draw_text_at(8, 8, "BAREBRAIN", COLOR_WHITE, COLOR_PANEL_DARK, 1, 70);
+    if (err == ESP_OK) err = draw_text_at(88, 8, "LIVE", RGB565(209, 230, 179), COLOR_PANEL_DARK, 1, 32);
+
+    if (err == ESP_OK) err = draw_panel(6, 31, 116, 38);
+    if (err == ESP_OK) err = draw_dot(14, 41, wifi_color);
+    if (err == ESP_OK) err = draw_text_at(27, 38, wifi_title, COLOR_TEXT, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(14, 54, wifi_detail, COLOR_MUTED, COLOR_PANEL, 1, 96);
+
+    if (err == ESP_OK) err = draw_panel(6, 76, 116, 38);
+    if (err == ESP_OK) err = draw_text_at(14, 82, date_text, COLOR_MUTED, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(14, 96, time_text, COLOR_TEXT, COLOR_PANEL, 2, 72);
+
+    if (err == ESP_OK) err = draw_panel(6, 121, 116, 33);
+    if (err == ESP_OK) err = draw_text_at(14, 128, s_weather1, COLOR_ACCENT, COLOR_PANEL, 1, 96);
+    if (err == ESP_OK) err = draw_text_at(14, 142, s_weather2, COLOR_MUTED, COLOR_PANEL, 1, 96);
+    return err;
+}
+
+static void status_task(void *arg)
+{
+    (void)arg;
+    while (true) {
+        if (s_ready && xSemaphoreTake(s_lock, pdMS_TO_TICKS(2000)) == pdTRUE) {
+            esp_err_t err = draw_status_screen_locked();
+            xSemaphoreGive(s_lock);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "status screen refresh failed: %s", esp_err_to_name(err));
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(STATUS_REFRESH_MS));
+    }
 }
 
 esp_err_t tool_display_init(void)
@@ -264,9 +451,15 @@ esp_err_t tool_display_init(void)
         return ESP_ERR_NO_MEM;
     }
     s_ready = true;
+    s_init_tick = xTaskGetTickCount();
     gpio_set_level(BRN_PROFILE_DISPLAY_BACKLIGHT, 1);
     ESP_LOGI(TAG, "ST7735S display ready on SPI2");
-    return draw_text("READY");
+    esp_err_t screen_err = draw_status_screen_locked();
+    if (screen_err != ESP_OK) {
+        return screen_err;
+    }
+    BaseType_t task_ok = xTaskCreate(status_task, "display_status", 3072, NULL, tskIDLE_PRIORITY + 1, NULL);
+    return task_ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
 esp_err_t tool_display_execute(const char *input_json, char *output, size_t output_size)
@@ -290,7 +483,17 @@ esp_err_t tool_display_execute(const char *input_json, char *output, size_t outp
         snprintf(output, output_size, "Error: display is busy");
         return ESP_ERR_TIMEOUT;
     }
-    esp_err_t err = draw_text(text);
+    const char *weather1 = cJSON_GetStringValue(cJSON_GetObjectItem(root, "weather1"));
+    const char *weather2 = cJSON_GetStringValue(cJSON_GetObjectItem(root, "weather2"));
+    if (weather1 && weather1[0] != '\0') {
+        copy_ascii_line(s_weather1, sizeof(s_weather1), weather1);
+    }
+    if (weather2 && weather2[0] != '\0') {
+        copy_ascii_line(s_weather2, sizeof(s_weather2), weather2);
+    } else {
+        copy_ascii_line(s_weather2, sizeof(s_weather2), text);
+    }
+    esp_err_t err = draw_status_screen_locked();
     xSemaphoreGive(s_lock);
     cJSON_Delete(root);
     if (err != ESP_OK) {

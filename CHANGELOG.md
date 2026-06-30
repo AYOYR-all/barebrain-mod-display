@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Render a mimiclaw-style status dashboard with WiFi, date/time, and weather cards.
+- Show `WIFI OK` with the current IP after connection.
+- Show setup information when WiFi is missing or times out.
+- Keep `display_text` compatible while allowing optional weather card updates.
+
 ## 0.1.2
 
 - Display `READY` after the ST7735S screen initializes successfully.

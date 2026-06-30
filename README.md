@@ -1,44 +1,36 @@
-# BareBrain Display Tool
+# BareBrain SPI Display Tool
 
-Version 0.1.1 supports ST7735S-compatible 1.8-inch 128x160 SPI TFT modules.
-The first hardware release renders wrapped ASCII text. Non-ASCII characters
-are replaced with `?`.
+External BareBrain mod for ST7735S-compatible 1.8-inch 128x160 SPI TFT modules.
 
-BareBrain 的外部显示屏插件骨架。插件注册 `display_text` 工具，用于将文本、状态和调试信息输出到 OLED 或 TFT 屏幕。
+Version 0.1.3 renders a mimiclaw-style status dashboard instead of a plain
+black text page. The screen shows WiFi state, IP/setup hint, a date/time card,
+and a weather card. Non-ASCII weather text is shown as `?`.
 
-## 当前状态
+## Hardware
 
-- 已完成 BareBrain Mod manifest。
-- 已完成工具注册和输入校验。
-- 尚未确定屏幕控制器、总线类型和 GPIO。
-- 在硬件配置完成前，工具会返回明确的未配置错误。
-
-## 硬件接口
-
-照片中的模块为 1.8 英寸 128x160 RGB TFT，接口标注为：
+The supported display module uses these pins:
 
 ```text
 GND VDD SCL SDA RST DC CS BLK
 ```
 
-- `VDD` 必须先按卖家资料或模块数据手册确认供电电压；照片本身无法确认是 3.3V 还是 5V
-- `GND` 接 `GND`
-- `SCL/SCK`、`SDA/MOSI`、`RST`、`DC`、`CS`、`BLK` 在 Manager 引脚配置页自行选择
+- `VDD`: verify the module voltage from the seller or datasheet first.
+- `GND`: connect to board ground.
+- `SCL/SCK`, `SDA/MOSI`, `RST`, `DC`, `CS`, and `BLK`: choose pins in the BareBrain Manager profile.
 
-插件不提供默认 GPIO，避免与其他外设或板载功能冲突。
+The mod does not provide default GPIO choices so it will not silently conflict
+with other peripherals.
 
-## 接入 BareBrain
+## BareBrain Usage
 
-云端构建下载 Release 后，将插件解压到：
-
-```text
-BareBrain/main/external_mods/tool-display/
-```
-
-固件 Profile 中启用：
+Enable the mod in the firmware profile:
 
 ```json
 {
   "enabled_mods": ["tool-display"]
 }
 ```
+
+After boot, the display refreshes automatically every few seconds. The
+registered `display_text` tool can update the weather card while keeping WiFi
+and date/time status visible.

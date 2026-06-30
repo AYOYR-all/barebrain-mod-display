@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "id": "tool-display",
-  "name": "显示屏幕",
-  "version": "0.1.2",
+  "name": "SPI Display",
+  "version": "0.1.3",
   "type": "tool",
-  "description": "在 BareBrain 连接的显示屏上显示文本和设备状态。",
+  "description": "Show BareBrain WiFi, time, and weather status on an ST7735S SPI screen.",
   "targets": ["esp32s3"],
   "barebrain_min": "0.1.0",
   "barebrain_max": "0.x",
@@ -29,7 +29,7 @@
   ],
   "services": [],
   "resources": {
-    "tasks": 0,
+    "tasks": 1,
     "gpio": ["configurable"],
     "spi": ["configurable"],
     "psram_bytes_hint": 8192,
@@ -63,7 +63,7 @@
     },
     "display.backlight": {
       "type": "gpio",
-      "label": "BLK 背光",
+      "label": "BLK backlight",
       "required": true
     }
   },
