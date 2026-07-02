@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.6
+
+- Encode the sunny weather icon for ST7735S BGR panels so it appears gold.
+- Render the time in white without the previous blue overlay.
+- Move the time card above the WiFi card.
+- Remove the green date strip and keep the date on the dark card background.
+
 ## 0.1.5
 
 - Switch the dashboard to a white header and dark body for better contrast.

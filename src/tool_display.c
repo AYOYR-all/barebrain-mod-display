@@ -61,8 +61,9 @@ enum {
     COLOR_WARN = RGB565(255, 198, 77),
     COLOR_ERROR = RGB565(255, 96, 96),
     COLOR_SKY = RGB565(104, 190, 255),
-    COLOR_SUN = RGB565(255, 216, 64),
-    COLOR_SUN_RAY = RGB565(255, 176, 40),
+    /* The common ST7735S modules used here render color data in BGR order. */
+    COLOR_SUN = RGB565(24, 214, 255),
+    COLOR_SUN_RAY = RGB565(0, 164, 255),
     COLOR_TIME_SHADOW = RGB565(55, 85, 95),
     COLOR_WHITE = RGB565(255, 255, 255),
 };
@@ -322,7 +323,6 @@ static esp_err_t draw_time_text(int x, int y, const char *text, uint16_t bg)
 {
     esp_err_t err = draw_text_at(x + 1, y + 1, text, COLOR_TIME_SHADOW, bg, 2, 72);
     if (err == ESP_OK) err = draw_text_at(x, y, text, COLOR_WHITE, bg, 2, 72);
-    if (err == ESP_OK) err = draw_text_at(x + 1, y, text, COLOR_SKY, bg, 2, 72);
     return err;
 }
 
@@ -403,15 +403,14 @@ static esp_err_t draw_dashboard_screen_locked(void)
     if (err == ESP_OK) err = draw_text_at(8, 10, "BAREBRAIN", COLOR_HEADER_TEXT, COLOR_HEADER, 1, 70);
     if (err == ESP_OK) err = draw_text_at(90, 10, "LIVE", COLOR_ACCENT, COLOR_HEADER, 1, 30);
 
-    if (err == ESP_OK) err = draw_panel(6, 35, 116, 33);
-    if (err == ESP_OK) err = draw_dot(14, 43, COLOR_ACCENT);
-    if (err == ESP_OK) err = draw_text_at(27, 41, "WIFI OK", COLOR_TEXT, COLOR_PANEL, 1, 84);
-    if (err == ESP_OK) err = draw_text_at(14, 55, wifi_manager_get_ip(), COLOR_SKY, COLOR_PANEL, 1, 96);
+    if (err == ESP_OK) err = draw_panel(6, 35, 116, 42);
+    if (err == ESP_OK) err = draw_text_at(14, 41, date_text, COLOR_MUTED, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_time_text(14, 56, time_text, COLOR_PANEL);
 
-    if (err == ESP_OK) err = draw_panel(6, 74, 116, 40);
-    if (err == ESP_OK) err = fill_rect(8, 76, 112, 10, COLOR_ACCENT_SOFT);
-    if (err == ESP_OK) err = draw_text_at(14, 80, date_text, COLOR_MUTED, COLOR_ACCENT_SOFT, 1, 84);
-    if (err == ESP_OK) err = draw_time_text(14, 96, time_text, COLOR_PANEL);
+    if (err == ESP_OK) err = draw_panel(6, 84, 116, 30);
+    if (err == ESP_OK) err = draw_dot(14, 93, COLOR_ACCENT);
+    if (err == ESP_OK) err = draw_text_at(27, 90, "WIFI OK", COLOR_TEXT, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(14, 103, wifi_manager_get_ip(), COLOR_SKY, COLOR_PANEL, 1, 96);
 
     if (err == ESP_OK) err = draw_panel(6, 121, 116, 33);
     if (err == ESP_OK) err = draw_text_at(14, 128, s_weather1, COLOR_WARN, COLOR_PANEL, 1, 66);
