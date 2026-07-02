@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Add a WiFi waiting/setup screen before the main dashboard.
+- Start SNTP time sync automatically after WiFi connects.
+- Refresh the dashboard colors and card layout.
+- Show Beijing time and a default sunny weather card with a sun icon.
+
 ## 0.1.3
 
 - Render a mimiclaw-style status dashboard with WiFi, date/time, and weather cards.

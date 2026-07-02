@@ -3,14 +3,18 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <time.h>
 
 #include "cJSON.h"
+#include "brn_config.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -45,15 +49,17 @@
 #define WIFI_TIMEOUT_MS 35000
 
 enum {
-    COLOR_BG = RGB565(244, 248, 240),
-    COLOR_PANEL = RGB565(251, 253, 248),
-    COLOR_PANEL_DARK = RGB565(35, 83, 58),
-    COLOR_LINE = RGB565(203, 218, 202),
-    COLOR_TEXT = RGB565(29, 48, 38),
-    COLOR_MUTED = RGB565(95, 118, 102),
-    COLOR_ACCENT = RGB565(47, 111, 79),
-    COLOR_WARN = RGB565(184, 126, 42),
-    COLOR_ERROR = RGB565(170, 63, 57),
+    COLOR_BG = RGB565(236, 241, 245),
+    COLOR_PANEL = RGB565(253, 254, 252),
+    COLOR_PANEL_DARK = RGB565(24, 62, 76),
+    COLOR_LINE = RGB565(192, 205, 212),
+    COLOR_TEXT = RGB565(24, 35, 43),
+    COLOR_MUTED = RGB565(91, 107, 116),
+    COLOR_ACCENT = RGB565(0, 137, 123),
+    COLOR_ACCENT_SOFT = RGB565(214, 238, 235),
+    COLOR_WARN = RGB565(226, 139, 54),
+    COLOR_ERROR = RGB565(202, 74, 74),
+    COLOR_SKY = RGB565(56, 124, 170),
     COLOR_WHITE = RGB565(255, 255, 255),
 };
 
@@ -61,9 +67,10 @@ static const char *TAG = "tool_display";
 static spi_device_handle_t s_spi;
 static SemaphoreHandle_t s_lock;
 static bool s_ready;
+static bool s_time_sync_started;
 static TickType_t s_init_tick;
-static char s_weather1[32] = "TODAY WEATHER";
-static char s_weather2[32] = "WAIT UPDATE";
+static char s_weather1[32] = "BEIJING";
+static char s_weather2[32] = "SUNNY";
 
 static esp_err_t transmit(bool data_mode, const void *data, size_t length)
 {
@@ -291,6 +298,115 @@ static esp_err_t draw_dot(int x, int y, uint16_t color)
     return err;
 }
 
+static esp_err_t draw_sun_icon(int x, int y)
+{
+    const uint16_t sun = RGB565(244, 174, 55);
+    const uint16_t ray = RGB565(236, 125, 49);
+    esp_err_t err = fill_rect(x + 5, y + 5, 8, 8, sun);
+    if (err == ESP_OK) err = fill_rect(x + 7, y + 3, 4, 2, ray);
+    if (err == ESP_OK) err = fill_rect(x + 7, y + 13, 4, 2, ray);
+    if (err == ESP_OK) err = fill_rect(x + 3, y + 7, 2, 4, ray);
+    if (err == ESP_OK) err = fill_rect(x + 13, y + 7, 2, 4, ray);
+    if (err == ESP_OK) err = fill_rect(x + 4, y + 4, 2, 2, ray);
+    if (err == ESP_OK) err = fill_rect(x + 12, y + 4, 2, 2, ray);
+    if (err == ESP_OK) err = fill_rect(x + 4, y + 12, 2, 2, ray);
+    if (err == ESP_OK) err = fill_rect(x + 12, y + 12, 2, 2, ray);
+    return err;
+}
+
+static bool time_is_valid(void)
+{
+    return time(NULL) > 1700000000;
+}
+
+static void ensure_time_sync_started(void)
+{
+    if (s_time_sync_started || !wifi_manager_is_connected()) {
+        return;
+    }
+    setenv("TZ", BRN_TIMEZONE, 1);
+    tzset();
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "time.cloudflare.com");
+    esp_sntp_init();
+    s_time_sync_started = true;
+    ESP_LOGI(TAG, "SNTP time sync started");
+}
+
+static void format_time(char *date_text, size_t date_size, char *time_text, size_t time_size)
+{
+    setenv("TZ", BRN_TIMEZONE, 1);
+    tzset();
+    strncpy(date_text, "SYNCING", date_size);
+    date_text[date_size - 1] = '\0';
+    strncpy(time_text, "--:--", time_size);
+    time_text[time_size - 1] = '\0';
+
+    time_t now = time(NULL);
+    if (time_is_valid()) {
+        struct tm local;
+        localtime_r(&now, &local);
+        strftime(date_text, date_size, "%m/%d %a", &local);
+        strftime(time_text, time_size, "%H:%M", &local);
+    }
+}
+
+static esp_err_t draw_wifi_screen_locked(bool has_credentials, bool timed_out)
+{
+    const char *title = timed_out ? "WIFI TIMEOUT" : (has_credentials ? "WIFI WAIT" : "SETUP WIFI");
+    const char *detail = timed_out ? "OPEN SETUP PORTAL" : (has_credentials ? "CONNECTING..." : "AP 192.168.4.1");
+    uint16_t state_color = timed_out || !has_credentials ? COLOR_WARN : COLOR_ACCENT;
+    uint32_t pulse = (uint32_t)((xTaskGetTickCount() - s_init_tick) / pdMS_TO_TICKS(STATUS_REFRESH_MS));
+
+    esp_err_t err = fill(COLOR_BG);
+    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 34, COLOR_PANEL_DARK);
+    if (err == ESP_OK) err = draw_text_at(12, 10, "BAREBRAIN", COLOR_WHITE, COLOR_PANEL_DARK, 1, 78);
+    if (err == ESP_OK) err = draw_text_at(92, 10, "BOOT", RGB565(152, 219, 208), COLOR_PANEL_DARK, 1, 30);
+
+    if (err == ESP_OK) err = draw_panel(10, 48, 108, 66);
+    if (err == ESP_OK) err = draw_text_at(22, 62, title, COLOR_TEXT, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(22, 82, detail, COLOR_MUTED, COLOR_PANEL, 1, 84);
+    for (int i = 0; err == ESP_OK && i < 4; ++i) {
+        uint16_t color = ((pulse + (uint32_t)i) % 4 == 0) ? state_color : COLOR_LINE;
+        err = draw_dot(42 + i * 12, 100, color);
+    }
+
+    if (err == ESP_OK) err = draw_text_at(12, 130, "WAIT FOR WIFI", COLOR_MUTED, COLOR_BG, 1, 104);
+    if (err == ESP_OK && (timed_out || !has_credentials)) {
+        err = draw_text_at(12, 144, "BRN-XXXX SETUP", COLOR_SKY, COLOR_BG, 1, 104);
+    }
+    return err;
+}
+
+static esp_err_t draw_dashboard_screen_locked(void)
+{
+    char date_text[16];
+    char time_text[8];
+    format_time(date_text, sizeof(date_text), time_text, sizeof(time_text));
+
+    esp_err_t err = fill(COLOR_BG);
+    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 27, COLOR_PANEL_DARK);
+    if (err == ESP_OK) err = draw_text_at(8, 9, "BAREBRAIN", COLOR_WHITE, COLOR_PANEL_DARK, 1, 70);
+    if (err == ESP_OK) err = draw_text_at(90, 9, "LIVE", RGB565(152, 219, 208), COLOR_PANEL_DARK, 1, 30);
+
+    if (err == ESP_OK) err = draw_panel(6, 33, 116, 34);
+    if (err == ESP_OK) err = draw_dot(14, 43, COLOR_ACCENT);
+    if (err == ESP_OK) err = draw_text_at(27, 40, "WIFI OK", COLOR_TEXT, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(14, 54, wifi_manager_get_ip(), COLOR_SKY, COLOR_PANEL, 1, 96);
+
+    if (err == ESP_OK) err = draw_panel(6, 74, 116, 40);
+    if (err == ESP_OK) err = fill_rect(8, 76, 112, 10, COLOR_ACCENT_SOFT);
+    if (err == ESP_OK) err = draw_text_at(14, 80, date_text, COLOR_MUTED, COLOR_ACCENT_SOFT, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(14, 96, time_text, COLOR_TEXT, COLOR_PANEL, 2, 72);
+
+    if (err == ESP_OK) err = draw_panel(6, 121, 116, 33);
+    if (err == ESP_OK) err = draw_text_at(14, 128, s_weather1, COLOR_ACCENT, COLOR_PANEL, 1, 66);
+    if (err == ESP_OK) err = draw_text_at(14, 142, s_weather2, COLOR_MUTED, COLOR_PANEL, 1, 66);
+    if (err == ESP_OK) err = draw_sun_icon(96, 130);
+    return err;
+}
+
 static void copy_ascii_line(char *dst, size_t dst_size, const char *src)
 {
     if (!dst || dst_size == 0) {
@@ -323,38 +439,11 @@ static esp_err_t draw_status_screen_locked(void)
     bool has_credentials = wifi_manager_has_credentials();
     uint32_t elapsed_ms = (uint32_t)((xTaskGetTickCount() - s_init_tick) * portTICK_PERIOD_MS);
     bool timed_out = has_credentials && !connected && elapsed_ms >= WIFI_TIMEOUT_MS;
-    const char *wifi_title = connected ? "WIFI OK" : (timed_out ? "WIFI TIMEOUT" : (has_credentials ? "WIFI WAIT" : "SETUP WIFI"));
-    const char *wifi_detail = connected ? wifi_manager_get_ip() : (timed_out ? "SETUP PORTAL" : (has_credentials ? "CONNECTING" : "192.168.4.1"));
-    uint16_t wifi_color = connected ? COLOR_ACCENT : (timed_out || !has_credentials ? COLOR_ERROR : COLOR_WARN);
-
-    char date_text[16] = "DATE SYNC";
-    char time_text[8] = "--:--";
-    time_t now = time(NULL);
-    if (now > 1700000000) {
-        struct tm local;
-        localtime_r(&now, &local);
-        strftime(date_text, sizeof(date_text), "%m/%d %a", &local);
-        strftime(time_text, sizeof(time_text), "%H:%M", &local);
+    if (!connected) {
+        return draw_wifi_screen_locked(has_credentials, timed_out);
     }
-
-    esp_err_t err = fill(COLOR_BG);
-    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 25, COLOR_PANEL_DARK);
-    if (err == ESP_OK) err = draw_text_at(8, 8, "BAREBRAIN", COLOR_WHITE, COLOR_PANEL_DARK, 1, 70);
-    if (err == ESP_OK) err = draw_text_at(88, 8, "LIVE", RGB565(209, 230, 179), COLOR_PANEL_DARK, 1, 32);
-
-    if (err == ESP_OK) err = draw_panel(6, 31, 116, 38);
-    if (err == ESP_OK) err = draw_dot(14, 41, wifi_color);
-    if (err == ESP_OK) err = draw_text_at(27, 38, wifi_title, COLOR_TEXT, COLOR_PANEL, 1, 84);
-    if (err == ESP_OK) err = draw_text_at(14, 54, wifi_detail, COLOR_MUTED, COLOR_PANEL, 1, 96);
-
-    if (err == ESP_OK) err = draw_panel(6, 76, 116, 38);
-    if (err == ESP_OK) err = draw_text_at(14, 82, date_text, COLOR_MUTED, COLOR_PANEL, 1, 84);
-    if (err == ESP_OK) err = draw_text_at(14, 96, time_text, COLOR_TEXT, COLOR_PANEL, 2, 72);
-
-    if (err == ESP_OK) err = draw_panel(6, 121, 116, 33);
-    if (err == ESP_OK) err = draw_text_at(14, 128, s_weather1, COLOR_ACCENT, COLOR_PANEL, 1, 96);
-    if (err == ESP_OK) err = draw_text_at(14, 142, s_weather2, COLOR_MUTED, COLOR_PANEL, 1, 96);
-    return err;
+    ensure_time_sync_started();
+    return draw_dashboard_screen_locked();
 }
 
 static void status_task(void *arg)
@@ -381,7 +470,7 @@ esp_err_t tool_display_init(void)
         .mode = GPIO_MODE_OUTPUT,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&outputs), TAG, "configure display GPIO");
-    gpio_set_level(BRN_PROFILE_DISPLAY_BACKLIGHT, 0);
+    gpio_set_level(BRN_PROFILE_DISPLAY_BACKLIGHT, 1);
     gpio_set_level(BRN_PROFILE_DISPLAY_RESET, 0);
     vTaskDelay(pdMS_TO_TICKS(20));
     gpio_set_level(BRN_PROFILE_DISPLAY_RESET, 1);
@@ -450,10 +539,10 @@ esp_err_t tool_display_init(void)
     if (!s_lock) {
         return ESP_ERR_NO_MEM;
     }
-    s_ready = true;
-    s_init_tick = xTaskGetTickCount();
     gpio_set_level(BRN_PROFILE_DISPLAY_BACKLIGHT, 1);
     ESP_LOGI(TAG, "ST7735S display ready on SPI2");
+    s_ready = true;
+    s_init_tick = xTaskGetTickCount();
     esp_err_t screen_err = draw_status_screen_locked();
     if (screen_err != ESP_OK) {
         return screen_err;
