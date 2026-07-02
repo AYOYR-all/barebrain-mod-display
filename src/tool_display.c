@@ -49,17 +49,21 @@
 #define WIFI_TIMEOUT_MS 35000
 
 enum {
-    COLOR_BG = RGB565(236, 241, 245),
-    COLOR_PANEL = RGB565(253, 254, 252),
-    COLOR_PANEL_DARK = RGB565(24, 62, 76),
-    COLOR_LINE = RGB565(192, 205, 212),
-    COLOR_TEXT = RGB565(24, 35, 43),
-    COLOR_MUTED = RGB565(91, 107, 116),
-    COLOR_ACCENT = RGB565(0, 137, 123),
-    COLOR_ACCENT_SOFT = RGB565(214, 238, 235),
-    COLOR_WARN = RGB565(226, 139, 54),
-    COLOR_ERROR = RGB565(202, 74, 74),
-    COLOR_SKY = RGB565(56, 124, 170),
+    COLOR_BG = RGB565(5, 7, 10),
+    COLOR_PANEL = RGB565(18, 24, 30),
+    COLOR_HEADER = RGB565(250, 252, 252),
+    COLOR_LINE = RGB565(42, 54, 62),
+    COLOR_TEXT = RGB565(235, 242, 244),
+    COLOR_HEADER_TEXT = RGB565(15, 28, 38),
+    COLOR_MUTED = RGB565(147, 163, 172),
+    COLOR_ACCENT = RGB565(42, 204, 184),
+    COLOR_ACCENT_SOFT = RGB565(12, 50, 48),
+    COLOR_WARN = RGB565(255, 198, 77),
+    COLOR_ERROR = RGB565(255, 96, 96),
+    COLOR_SKY = RGB565(104, 190, 255),
+    COLOR_SUN = RGB565(255, 216, 64),
+    COLOR_SUN_RAY = RGB565(255, 176, 40),
+    COLOR_TIME_SHADOW = RGB565(55, 85, 95),
     COLOR_WHITE = RGB565(255, 255, 255),
 };
 
@@ -69,7 +73,7 @@ static SemaphoreHandle_t s_lock;
 static bool s_ready;
 static bool s_time_sync_started;
 static TickType_t s_init_tick;
-static char s_weather1[32] = "BEIJING";
+static char s_weather1[32] = "WEATHER";
 static char s_weather2[32] = "SUNNY";
 
 static esp_err_t transmit(bool data_mode, const void *data, size_t length)
@@ -300,17 +304,25 @@ static esp_err_t draw_dot(int x, int y, uint16_t color)
 
 static esp_err_t draw_sun_icon(int x, int y)
 {
-    const uint16_t sun = RGB565(244, 174, 55);
-    const uint16_t ray = RGB565(236, 125, 49);
-    esp_err_t err = fill_rect(x + 5, y + 5, 8, 8, sun);
-    if (err == ESP_OK) err = fill_rect(x + 7, y + 3, 4, 2, ray);
-    if (err == ESP_OK) err = fill_rect(x + 7, y + 13, 4, 2, ray);
-    if (err == ESP_OK) err = fill_rect(x + 3, y + 7, 2, 4, ray);
-    if (err == ESP_OK) err = fill_rect(x + 13, y + 7, 2, 4, ray);
-    if (err == ESP_OK) err = fill_rect(x + 4, y + 4, 2, 2, ray);
-    if (err == ESP_OK) err = fill_rect(x + 12, y + 4, 2, 2, ray);
-    if (err == ESP_OK) err = fill_rect(x + 4, y + 12, 2, 2, ray);
-    if (err == ESP_OK) err = fill_rect(x + 12, y + 12, 2, 2, ray);
+    esp_err_t err = fill_rect(x + 6, y + 1, 4, 4, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 6, y + 15, 4, 4, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 1, y + 6, 4, 4, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 15, y + 6, 4, 4, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 3, y + 3, 3, 3, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 13, y + 3, 3, 3, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 3, y + 13, 3, 3, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 13, y + 13, 3, 3, COLOR_SUN_RAY);
+    if (err == ESP_OK) err = fill_rect(x + 5, y + 5, 10, 10, COLOR_SUN);
+    if (err == ESP_OK) err = fill_rect(x + 7, y + 3, 6, 14, COLOR_SUN);
+    if (err == ESP_OK) err = fill_rect(x + 3, y + 7, 14, 6, COLOR_SUN);
+    return err;
+}
+
+static esp_err_t draw_time_text(int x, int y, const char *text, uint16_t bg)
+{
+    esp_err_t err = draw_text_at(x + 1, y + 1, text, COLOR_TIME_SHADOW, bg, 2, 72);
+    if (err == ESP_OK) err = draw_text_at(x, y, text, COLOR_WHITE, bg, 2, 72);
+    if (err == ESP_OK) err = draw_text_at(x + 1, y, text, COLOR_SKY, bg, 2, 72);
     return err;
 }
 
@@ -360,21 +372,22 @@ static esp_err_t draw_wifi_screen_locked(bool has_credentials, bool timed_out)
     uint32_t pulse = (uint32_t)((xTaskGetTickCount() - s_init_tick) / pdMS_TO_TICKS(STATUS_REFRESH_MS));
 
     esp_err_t err = fill(COLOR_BG);
-    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 34, COLOR_PANEL_DARK);
-    if (err == ESP_OK) err = draw_text_at(12, 10, "BAREBRAIN", COLOR_WHITE, COLOR_PANEL_DARK, 1, 78);
-    if (err == ESP_OK) err = draw_text_at(92, 10, "BOOT", RGB565(152, 219, 208), COLOR_PANEL_DARK, 1, 30);
+    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 31, COLOR_HEADER);
+    if (err == ESP_OK) err = draw_text_at(8, 9, "BAREBRAIN", COLOR_HEADER_TEXT, COLOR_HEADER, 1, 72);
+    if (err == ESP_OK) err = draw_text_at(92, 9, "BOOT", COLOR_ACCENT, COLOR_HEADER, 1, 30);
 
-    if (err == ESP_OK) err = draw_panel(10, 48, 108, 66);
-    if (err == ESP_OK) err = draw_text_at(22, 62, title, COLOR_TEXT, COLOR_PANEL, 1, 84);
-    if (err == ESP_OK) err = draw_text_at(22, 82, detail, COLOR_MUTED, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_panel(8, 43, 112, 76);
+    if (err == ESP_OK) err = fill_rect(12, 47, 104, 14, COLOR_ACCENT_SOFT);
+    if (err == ESP_OK) err = draw_text_at(22, 51, title, COLOR_TEXT, COLOR_ACCENT_SOFT, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(22, 76, detail, COLOR_MUTED, COLOR_PANEL, 1, 84);
     for (int i = 0; err == ESP_OK && i < 4; ++i) {
         uint16_t color = ((pulse + (uint32_t)i) % 4 == 0) ? state_color : COLOR_LINE;
-        err = draw_dot(42 + i * 12, 100, color);
+        err = draw_dot(42 + i * 12, 99, color);
     }
 
-    if (err == ESP_OK) err = draw_text_at(12, 130, "WAIT FOR WIFI", COLOR_MUTED, COLOR_BG, 1, 104);
+    if (err == ESP_OK) err = draw_text_at(14, 131, "WAIT FOR WIFI", COLOR_TEXT, COLOR_BG, 1, 100);
     if (err == ESP_OK && (timed_out || !has_credentials)) {
-        err = draw_text_at(12, 144, "BRN-XXXX SETUP", COLOR_SKY, COLOR_BG, 1, 104);
+        err = draw_text_at(14, 145, "BRN-XXXX SETUP", COLOR_SKY, COLOR_BG, 1, 100);
     }
     return err;
 }
@@ -386,24 +399,24 @@ static esp_err_t draw_dashboard_screen_locked(void)
     format_time(date_text, sizeof(date_text), time_text, sizeof(time_text));
 
     esp_err_t err = fill(COLOR_BG);
-    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 27, COLOR_PANEL_DARK);
-    if (err == ESP_OK) err = draw_text_at(8, 9, "BAREBRAIN", COLOR_WHITE, COLOR_PANEL_DARK, 1, 70);
-    if (err == ESP_OK) err = draw_text_at(90, 9, "LIVE", RGB565(152, 219, 208), COLOR_PANEL_DARK, 1, 30);
+    if (err == ESP_OK) err = fill_rect(0, 0, DISPLAY_WIDTH, 29, COLOR_HEADER);
+    if (err == ESP_OK) err = draw_text_at(8, 10, "BAREBRAIN", COLOR_HEADER_TEXT, COLOR_HEADER, 1, 70);
+    if (err == ESP_OK) err = draw_text_at(90, 10, "LIVE", COLOR_ACCENT, COLOR_HEADER, 1, 30);
 
-    if (err == ESP_OK) err = draw_panel(6, 33, 116, 34);
+    if (err == ESP_OK) err = draw_panel(6, 35, 116, 33);
     if (err == ESP_OK) err = draw_dot(14, 43, COLOR_ACCENT);
-    if (err == ESP_OK) err = draw_text_at(27, 40, "WIFI OK", COLOR_TEXT, COLOR_PANEL, 1, 84);
-    if (err == ESP_OK) err = draw_text_at(14, 54, wifi_manager_get_ip(), COLOR_SKY, COLOR_PANEL, 1, 96);
+    if (err == ESP_OK) err = draw_text_at(27, 41, "WIFI OK", COLOR_TEXT, COLOR_PANEL, 1, 84);
+    if (err == ESP_OK) err = draw_text_at(14, 55, wifi_manager_get_ip(), COLOR_SKY, COLOR_PANEL, 1, 96);
 
     if (err == ESP_OK) err = draw_panel(6, 74, 116, 40);
     if (err == ESP_OK) err = fill_rect(8, 76, 112, 10, COLOR_ACCENT_SOFT);
     if (err == ESP_OK) err = draw_text_at(14, 80, date_text, COLOR_MUTED, COLOR_ACCENT_SOFT, 1, 84);
-    if (err == ESP_OK) err = draw_text_at(14, 96, time_text, COLOR_TEXT, COLOR_PANEL, 2, 72);
+    if (err == ESP_OK) err = draw_time_text(14, 96, time_text, COLOR_PANEL);
 
     if (err == ESP_OK) err = draw_panel(6, 121, 116, 33);
-    if (err == ESP_OK) err = draw_text_at(14, 128, s_weather1, COLOR_ACCENT, COLOR_PANEL, 1, 66);
-    if (err == ESP_OK) err = draw_text_at(14, 142, s_weather2, COLOR_MUTED, COLOR_PANEL, 1, 66);
-    if (err == ESP_OK) err = draw_sun_icon(96, 130);
+    if (err == ESP_OK) err = draw_text_at(14, 128, s_weather1, COLOR_WARN, COLOR_PANEL, 1, 66);
+    if (err == ESP_OK) err = draw_text_at(14, 142, s_weather2, COLOR_TEXT, COLOR_PANEL, 1, 66);
+    if (err == ESP_OK) err = draw_sun_icon(96, 128);
     return err;
 }
 

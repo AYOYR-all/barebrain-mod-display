@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "tool-display",
   "name": "SPI Display",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "tool",
   "description": "Show BareBrain WiFi, time, and weather status on an ST7735S SPI screen.",
   "targets": ["esp32s3"],

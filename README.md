@@ -2,10 +2,10 @@
 
 External BareBrain mod for ST7735S-compatible 1.8-inch 128x160 SPI TFT modules.
 
-Version 0.1.4 shows a WiFi waiting/setup screen first, then switches to the
-dashboard after WiFi connects. The dashboard shows IP, synced Beijing time, and
-a default sunny weather card with a sun icon. Non-ASCII weather text is shown
-as `?`.
+Version 0.1.5 shows a WiFi waiting/setup screen first, then switches to a
+white-header, dark-body dashboard after WiFi connects. The dashboard shows IP,
+synced Beijing time, and a default `WEATHER / SUNNY` card with a yellow sun
+icon. Non-ASCII weather text is shown as `?`.
 
 ## Hardware
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5
+
+- Switch the dashboard to a white header and dark body for better contrast.
+- Improve the WiFi waiting screen layout.
+- Use a yellow sun icon and default `WEATHER / SUNNY` card.
+- Add a shadowed, brighter time display.
+
 ## 0.1.4
 
 - Add a WiFi waiting/setup screen before the main dashboard.
